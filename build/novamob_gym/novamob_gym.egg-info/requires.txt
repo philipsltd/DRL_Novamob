@@ -1,0 +1,4 @@
+setuptools
+gymnasium
+numpy
+rclpy

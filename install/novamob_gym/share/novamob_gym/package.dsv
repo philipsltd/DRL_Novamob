@@ -1,0 +1,6 @@
+source;share/novamob_gym/hook/pythonpath.ps1
+source;share/novamob_gym/hook/pythonpath.dsv
+source;share/novamob_gym/hook/pythonpath.sh
+source;share/novamob_gym/hook/ament_prefix_path.ps1
+source;share/novamob_gym/hook/ament_prefix_path.dsv
+source;share/novamob_gym/hook/ament_prefix_path.sh

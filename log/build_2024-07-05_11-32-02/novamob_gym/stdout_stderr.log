@@ -1,0 +1,31 @@
+running egg_info
+creating ../../build/novamob_gym/novamob_gym.egg-info
+writing ../../build/novamob_gym/novamob_gym.egg-info/PKG-INFO
+writing dependency_links to ../../build/novamob_gym/novamob_gym.egg-info/dependency_links.txt
+writing requirements to ../../build/novamob_gym/novamob_gym.egg-info/requires.txt
+writing top-level names to ../../build/novamob_gym/novamob_gym.egg-info/top_level.txt
+writing manifest file '../../build/novamob_gym/novamob_gym.egg-info/SOURCES.txt'
+reading manifest file '../../build/novamob_gym/novamob_gym.egg-info/SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file '../../build/novamob_gym/novamob_gym.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/filipe/thesis/drl_novamob/build/novamob_gym/build
+creating /home/filipe/thesis/drl_novamob/build/novamob_gym/build/lib
+creating /home/filipe/thesis/drl_novamob/build/novamob_gym/build/lib/novamob_gym
+copying novamob_gym/__init__.py -> /home/filipe/thesis/drl_novamob/build/novamob_gym/build/lib/novamob_gym
+running install
+running install_lib
+creating /home/filipe/thesis/drl_novamob/install/novamob_gym/lib/python3.10/site-packages/novamob_gym
+copying /home/filipe/thesis/drl_novamob/build/novamob_gym/build/lib/novamob_gym/__init__.py -> /home/filipe/thesis/drl_novamob/install/novamob_gym/lib/python3.10/site-packages/novamob_gym
+byte-compiling /home/filipe/thesis/drl_novamob/install/novamob_gym/lib/python3.10/site-packages/novamob_gym/__init__.py to __init__.cpython-310.pyc
+running install_data
+creating /home/filipe/thesis/drl_novamob/install/novamob_gym/share/ament_index
+creating /home/filipe/thesis/drl_novamob/install/novamob_gym/share/ament_index/resource_index
+creating /home/filipe/thesis/drl_novamob/install/novamob_gym/share/ament_index/resource_index/packages
+copying resource/novamob_gym -> /home/filipe/thesis/drl_novamob/install/novamob_gym/share/ament_index/resource_index/packages
+copying package.xml -> /home/filipe/thesis/drl_novamob/install/novamob_gym/share/novamob_gym
+running install_egg_info
+Copying ../../build/novamob_gym/novamob_gym.egg-info to /home/filipe/thesis/drl_novamob/install/novamob_gym/lib/python3.10/site-packages/novamob_gym-0.0.0-py3.10.egg-info
+running install_scripts
+writing list of installed files to '/home/filipe/thesis/drl_novamob/build/novamob_gym/install.log'
