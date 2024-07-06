@@ -9,59 +9,86 @@ from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
+
 class NovamobGym(gym.Env):
     def __init__(self):
         super(NovamobGym, self).__init__()
         if not rclpy.ok():
             rclpy.init(args=None)
-        self.node = rclpy.create_node('gym_robot_env')
+        self.node = rclpy.create_node('gym_novamob_env')
 
-        # Define action and observation space
-        # Example for a robot with two continuous actions
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=float)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
+        # * Define action and observation space
+        # the action space is a dictionary with two keys: linear_x and angular_z velocities
+        self.action_space = spaces.Dict({'linear_x': spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+                                         'angular_z': spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)})
+        
+        # the observation space is a continuous space with 1080 values from the lidar sensor
+        self.observation_space = spaces.Dict({'lidar': spaces.Box(low=-np.inf, high=np.inf, shape=(1080,), dtype=np.float32),
+                                              'position': spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
+                                              'orientation': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                                              })
 
-        # Publishers and subscribers
-        self.cmd_vel_publisher = self.node.create_publisher(Twist, '/cmd_vel', 10)
-        self.publisher = self.node.create_publisher(String, '/robot/command', 10)
-        self.subscription = self.node.create_subscription(
-            String,
-            '/robot/state',
-            self.listener_callback,
-            10
-        )
-        self.current_state = np.zeros(2)
+        # Publishers 
+        self.cmd_vel_publisher = self.node.create_publisher(Twist, 
+                                                            '/cmd_vel',
+                                                            1)
+        self.publisher = self.node.create_publisher(String, 
+                                                    '/robot/command',
+                                                    10)
 
-        self.lidar_sub = self.node.create_subscription(
-            LaserScan,
-            '/scan',
-            self.lidar_callback,
-            10
-        )
+        # Subscribers
+        self.odom_subscription = self.node.create_subscription(String,
+                                                          '/odom',
+                                                          self.odom_callback,
+                                                          10)
+        self.lidar_subscription = self.node.create_subscription(LaserScan,
+                                                       '/scan',
+                                                       self.lidar_callback,
+                                                       10)
+        
+        # Place holder and initialization for data
+        self.lidar_data = np.zeros(1080)
+        self.robot_state = np.zeros(2)
 
-    def listener_callback(self, msg):
-        self.current_state = np.array([float(val) for val in msg.data.split()])
-        print(f"listenining to: {self.current_state}")
+
+    def odom_callback(self, msg):
+        # Store the robot state in a 6 element numpy array (first 3 elements are position, last 4 are orientation)
+        self.robot_state = np.array([float(val) for val in msg.data.split()])
+        print(f"listenining to: {self.robot_state}")
+
 
     def lidar_callback(self, msg):
-        print(f"lidar data: {msg.ranges}")
+        # Process LiDAR data (extract X, Y, Z and potentially preprocess)
+        lidar_readings = list(msg.ranges)
+        # Handle infinite values returned by the LiDAR sensor
+        lidar_readings = [1e6 if x == float('inf') else x for x in lidar_readings]
+        # Convert the readings to a string and remove brackets
+        lidar_readings_str = str(lidar_readings).replace('[', '').replace(']', '')
+        # Split the string into separate elements and convert them to floats
+        lidar_readings_columns = [float(x) for x in lidar_readings_str.split(',')]
+        # Store the LiDAR data in a numpy array
+        self.lidar_data = np.array(lidar_readings_columns)
+
+
 
     def step(self, action):
         # Send action to robot
         twist = Twist()
-        twist.linear.x = action[0]  # Linear velocity
-        twist.angular.z = action[1]  # Angular velocity
+        twist.linear.x = action['linear_x']  # Linear velocity
+        twist.angular.z = action['angular_z']  # Angular velocity
         self.cmd_vel_publisher.publish(twist)
 
         # Wait for the next state
         rclpy.spin_once(self.node)
 
         # Example reward calculation
-        reward = -np.sum(np.square(self.current_state))
+        reward = -np.sum(np.square(self.robot_state))
 
-        done = self.is_done(self.current_state)
+        done = self.is_done(self.robot_state)
 
-        return self.current_state, reward, done, {}
+        state = {'lidar': self.lidar_data, 'position': self.robot_state[:3], 'orientation': self.robot_state[3:]}
+
+        return state, reward, done, {}
 
     def reset(self, seed=None, options=None):
         # Handle the seed for random number generation
@@ -71,7 +98,7 @@ class NovamobGym(gym.Env):
         self.publisher.publish(String(data='reset'))
         rclpy.spin_once(self.node)
 
-        return self.current_state, {}
+        return self.robot_state, {}
 
     def is_done(self, state):
         # Define a condition to end the episode

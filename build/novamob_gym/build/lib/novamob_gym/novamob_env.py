@@ -14,43 +14,52 @@ class NovamobGym(gym.Env):
         super(NovamobGym, self).__init__()
         if not rclpy.ok():
             rclpy.init(args=None)
-        self.node = rclpy.create_node('gym_robot_env')
+        self.node = rclpy.create_node('gym_novamob_env')
 
-        # Define action and observation space
-        # Example for a robot with two continuous actions
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=float)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
+        # * Define action and observation space
+        # the action space is a dictionary with two keys: linear_x and angular_z velocities
+        self.action_space = spaces.Dict({'linear_x': spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+                                         'angular_z': spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)})
+        
+        # the observation space is a continuous space with 1080 values from the lidar sensor
+        # ? still need to consider the state of the robot (position and orientation)
+        # ? do i need to consider the odom and the map data?
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(1080,), dtype=np.float32)
 
-        # Publishers and subscribers
-        self.cmd_vel_publisher = self.node.create_publisher(Twist, '/cmd_vel', 10)
-        self.publisher = self.node.create_publisher(String, '/robot/command', 10)
-        self.subscription = self.node.create_subscription(
-            String,
-            '/robot/state',
-            self.listener_callback,
-            10
-        )
+        # Publishers 
+        self.cmd_vel_publisher = self.node.create_publisher(Twist, 
+                                                            '/cmd_vel',
+                                                            10)
+        self.publisher = self.node.create_publisher(String, 
+                                                    '/robot/command',
+                                                    10)
+
+        # Subscribers
+        self.subscription = self.node.create_subscription(String,
+                                                          '/robot/state',
+                                                          self.listener_callback,
+                                                          10)
+        self.lidar_sub = self.node.create_subscription(LaserScan,
+                                                       '/scan',
+                                                       self.lidar_callback,
+                                                       10)
+        
+        # Place holder and initialization for data
+        self.lidar_data = np.zeros(1080)
         self.current_state = np.zeros(2)
-
-        self.lidar_sub = self.node.create_subscription(
-            LaserScan,
-            '/scan',
-            self.lidar_callback,
-            10
-        )
 
     def listener_callback(self, msg):
         self.current_state = np.array([float(val) for val in msg.data.split()])
         print(f"listenining to: {self.current_state}")
 
     def lidar_callback(self, msg):
-        print(f"lidar data: {msg.ranges}")
+        self.lidar_data = np.array(msg.ranges)
 
     def step(self, action):
         # Send action to robot
         twist = Twist()
-        twist.linear.x = 0.5 # action[0]  # Linear velocity
-        twist.angular.z = 0.0 # action[1]  # Angular velocity
+        twist.linear.x = action['linear_x']  # Linear velocity
+        twist.angular.z = action['angular_z']  # Angular velocity
         self.cmd_vel_publisher.publish(twist)
 
         # Wait for the next state
@@ -61,7 +70,7 @@ class NovamobGym(gym.Env):
 
         done = self.is_done(self.current_state)
 
-        return self.current_state, reward, done, {}
+        return self.lidar_data, reward, done, {}
 
     def reset(self, seed=None, options=None):
         # Handle the seed for random number generation
