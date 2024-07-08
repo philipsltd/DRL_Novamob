@@ -1,5 +1,8 @@
+import sys
+import os
 import gymnasium as gym
 import rclpy
+import novamob_gym
 
 def test_environment():
     # Initialize the environment using gym.make
@@ -13,16 +16,16 @@ def test_environment():
     step_count = 0
     
     # Test loop - you can define the number of steps you want to test
-    while not done and step_count < 10:  # Test for 10 steps
+    while not done and step_count < 5:  # Test for 5 steps
         # Sample a random action
         action = env.action_space.sample()
         print(f"Step {step_count}: Action: {action}")
         
         # Take a step in the environment
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
         
         # Print the results of the step
-        print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {done}")
+        print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {terminated}")
         
         step_count += 1
     
