@@ -1,13 +1,38 @@
 import gymnasium as gym
-import novamob_gym
+import rclpy
 
-env = gym.make('NovamobGym-v0')
+def test_environment():
+    # Initialize the environment using gym.make
+    env = gym.make('NovamobGym-v0')
+    
+    # Reset the environment and get the initial observation
+    obs = env.reset()
+    print(f"Initial Observation: {obs}")
+    
+    done = False
+    step_count = 0
+    
+    # Test loop - you can define the number of steps you want to test
+    while not done and step_count < 10:  # Test for 10 steps
+        # Sample a random action
+        action = env.action_space.sample()
+        print(f"Step {step_count}: Action: {action}")
+        
+        # Take a step in the environment
+        obs, reward, done, info = env.step(action)
+        
+        # Print the results of the step
+        print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {done}")
+        
+        step_count += 1
+    
+    # Close the environment
+    env.close()
 
-obs = env.reset()
-done = False
-while not done:
-    action = env.action_space.sample()  # Replace with your action selection logic
-    obs, reward, done, info = env.step(action)
-    print(f"Obs: {obs}, Reward: {reward}, Done: {done}")
-
-env.close()
+if __name__ == '__main__':
+    rclpy.init(args=None)
+    try:
+        test_environment()
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()

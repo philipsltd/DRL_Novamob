@@ -8,7 +8,15 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
+from rosgraph_msgs.msg import Clock
 
+# ROS 2 Service imports
+from std_srvs.srv import Empty
+
+# -- Environment Constants --
+from .common.settings import MAX_EPISODE_TIME, GOAL_THRESHOLD, COLLISION_DISTANCE, MAX_TILT
+# -- Possible Outcomes --
+from .common.settings import UNKNOWN, GOAL_REACHED, COLLISION, TIMEOUT, ROLLED_OVER
 
 class NovamobGym(gym.Env):
     def __init__(self):
@@ -28,6 +36,9 @@ class NovamobGym(gym.Env):
                                               'orientation': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
                                               })
 
+        # Clients
+        self.reset_client = self.node.create_client(Empty, '/reset_simulation')
+
         # Publishers 
         self.cmd_vel_publisher = self.node.create_publisher(Twist, 
                                                             '/cmd_vel',
@@ -38,23 +49,34 @@ class NovamobGym(gym.Env):
 
         # Subscribers
         self.odom_subscription = self.node.create_subscription(String,
-                                                          '/odom',
-                                                          self.odom_callback,
-                                                          10)
+                                                               '/odom',
+                                                               self.odom_callback,
+                                                               10)
         self.lidar_subscription = self.node.create_subscription(LaserScan,
-                                                       '/scan',
-                                                       self.lidar_callback,
-                                                       10)
+                                                                '/scan',
+                                                                self.lidar_callback,
+                                                                10)
+        self.clock_subscription = self.node.create_subscription(Clock,
+                                                                '/clock',
+                                                                self.clock_callback,
+                                                                10)
         
         # Place holder and initialization for data
         self.lidar_data = np.zeros(1080)
+        self.obstacle_distance = np.inf
         self.robot_state = np.zeros(2)
+        self.robot_tilt = np.zeros(2)
+        self.current_time = 0
+        self.episode_deadline = np.inf
 
 
     def odom_callback(self, msg):
-        # Store the robot state in a 6 element numpy array (first 3 elements are position, last 4 are orientation)
-        self.robot_state = np.array([float(val) for val in msg.data.split()])
-        print(f"listenining to: {self.robot_state}")
+        # Store the robot state and tilt
+        self.robot_state[0] = msg.pose.pose.position.x
+        self.robot_state[1] = msg.pose.pose.position.y
+        self.robot_tilt[0] = msg.pose.pose.orientation.x
+        self.robot_tilt[1] = msg.pose.pose.orientation.y
+        print(f"Listening to position: {self.robot_state} and tilt: {self.robot_tilt}")
 
 
     def lidar_callback(self, msg):
@@ -68,41 +90,60 @@ class NovamobGym(gym.Env):
         lidar_readings_columns = [float(x) for x in lidar_readings_str.split(',')]
         # Store the LiDAR data in a numpy array
         self.lidar_data = np.array(lidar_readings_columns)
+        self.obstacle_distance = np.min(self.lidar_data)
 
+
+    def clock_callback(self, msg):
+        # Store the time elapsed
+        self.current_time = msg.clock.sec
 
 
     def step(self, action):
         # Send action to robot
         twist = Twist()
-        twist.linear.x = action['linear_x']  # Linear velocity
-        twist.angular.z = action['angular_z']  # Angular velocity
+        twist.linear.x = action['linear_x'][0]  # Linear velocity
+        twist.angular.z = action['angular_z'][0]  # Angular velocity
         self.cmd_vel_publisher.publish(twist)
 
-        # Wait for the next state
-        rclpy.spin_once(self.node)
+        # Check the status of the robot
+        # Verifies the time elapsed, distance to the goal, distance to obstacles, and robot tilt and concludes if the episode is done
+        done = self.is_done()
 
-        # Example reward calculation
+        # Calculate the reward
+        # TODO - Implement the reward function
         reward = -np.sum(np.square(self.robot_state))
 
-        done = self.is_done(self.robot_state)
-
-        state = {'lidar': self.lidar_data, 'position': self.robot_state[:3], 'orientation': self.robot_state[3:]}
+        state = {'lidar': self.lidar_data, 'position': self.robot_state, 'robot_tilt': self.robot_tilt}
 
         return state, reward, done, {}
 
-    def reset(self, seed=None, options=None):
-        # Handle the seed for random number generation
-        super().reset(seed=seed)
-
-        # Reset the robot and simulation
-        self.publisher.publish(String(data='reset'))
+    def reset(self):
+        # Reset the gazebo simulation
         rclpy.spin_once(self.node)
+        if self.reset_client.wait_for_service(timeout_sec=1.0):
+            reset_req = Empty.Request()
+            future = self.reset_client.call_async(reset_req)
+            rclpy.spin_until_future_complete(self.node, future)
+            if future.result() is not None:
+                self.node.get_logger().info('Simulation reset completed')
+            else:
+                self.node.get_logger().error('Failed to reset simulation')
+        else:
+            self.node.get_logger().error('Reset service not available')
 
-        return self.robot_state, {}
+        # Stop the robot and reset the episode
+        self.cmd_vel_publisher.publish(Twist())  # stop robot
+        self.episode_deadline = self.current_time + MAX_EPISODE_TIME
+        self.done = False
 
-    def is_done(self, state):
+        self.robot_state = np.zeros(2)
+        self.robot_tilt = np.zeros(2)
+        self.obstacle_distance = np.inf
+
+        return {'position': self.robot_state, 'robot_tilt': self.robot_tilt, 'lidar': self.lidar_data}
+
+    def is_done(self):
         # Define a condition to end the episode
-        # return np.linalg.norm(state) < 0.1
         return False
 
     def close(self):
@@ -111,16 +152,28 @@ class NovamobGym(gym.Env):
         if rclpy.ok():
             rclpy.shutdown()
 
-    def render(self, mode='human'):
-        # Render the environment for visualization
-        pass
-
-    def seed(self, seed=None):
-        # Handle the seed for random number generation
-        super().seed(seed=seed)
+    # def render(self, mode='human'):
+    #     # Render the environment for visualization
+    #     pass
 
     def __del__(self):
         self.close()
+
+def get_status(self):
+    self.robot_status = UNKNOWN
+
+    if self.goal_distance < GOAL_THRESHOLD:
+        self.robot_status = GOAL_REACHED
+    elif self.obstacle_distance < COLLISION_DISTANCE:
+        self.robot_status = COLLISION
+    elif self.current_time >= self.episode_deadline:
+        self.robot_status = TIMEOUT
+    elif self.robot_tilt > MAX_TILT or self.robot_tilt < MAX_TILT:
+        self.robot_status = ROLLED_OVER
+
+    if self.robot_status != UNKNOWN:
+        done = True
+    return done
 
 def main(args=None):
     env = NovamobGym()
