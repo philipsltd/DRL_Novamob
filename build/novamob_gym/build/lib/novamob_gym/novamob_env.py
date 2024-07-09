@@ -1,5 +1,4 @@
-import sys
-import os
+import time
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -12,6 +11,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 from rosgraph_msgs.msg import Clock
+from nav_msgs.msg import Odometry
 
 # ROS 2 Service imports
 from std_srvs.srv import Empty
@@ -26,6 +26,7 @@ MAX_EPISODE_TIME = 60  # seconds
 GOAL_THRESHOLD = 0.1  # meters
 COLLISION_DISTANCE = 0.1  # meters
 MAX_TILT = 1.57  # radians = 90 degrees
+TIME_DELTA = 0.1  # seconds
 
 
 # Define the possible outcomes of the episode to calculate the reward
@@ -34,6 +35,7 @@ GOAL_REACHED = 1
 COLLISION = 2
 TIMEOUT = 3
 ROLLED_OVER = 4
+
 
 class NovamobGym(gym.Env):
     def __init__(self):
@@ -55,6 +57,8 @@ class NovamobGym(gym.Env):
 
         # Clients
         self.reset_client = self.node.create_client(Empty, '/reset_simulation')
+        self.pause_client = self.node.create_client(Empty, '/gazebo/pause_physics')
+        self.unpause_client = self.node.create_client(Empty, '/gazebo/unpause_physics')
 
          # QoS profile for clock subscriber
         clock_qos_profile = QoSProfile(
@@ -71,14 +75,14 @@ class NovamobGym(gym.Env):
                                                     10)
 
         # Subscribers
-        self.odom_subscription = self.node.create_subscription(String,
+        self.odom_subscription = self.node.create_subscription(Odometry,
                                                                '/odom',
                                                                self.odom_callback,
                                                                10)
         self.lidar_subscription = self.node.create_subscription(LaserScan,
                                                                 '/scan',
                                                                 self.lidar_callback,
-                                                                10)
+                                                                1)
         self.clock_subscription = self.node.create_subscription(Clock,
                                                                 '/clock',
                                                                 self.clock_callback,
@@ -93,8 +97,12 @@ class NovamobGym(gym.Env):
         self.current_time = 0
         self.episode_deadline = np.inf
 
+        self.lidar_read = 0
+        self.odom_read = 0
+        self.clock_read = 0
+
         # Initialize the random number generator
-        self.np_random = np.random.RandomState()
+        self.np_random = np.random.RandomState(42)
 
 
     def odom_callback(self, msg):
@@ -103,7 +111,9 @@ class NovamobGym(gym.Env):
         self.robot_state[1] = msg.pose.pose.position.y
         self.robot_tilt[0] = msg.pose.pose.orientation.x
         self.robot_tilt[1] = msg.pose.pose.orientation.y
-        print(f"Listening to position: {self.robot_state} and tilt: {self.robot_tilt}")
+
+        self.odom_read += 1
+        print(f"Odom read: {self.odom_read}")
 
 
     def lidar_callback(self, msg):
@@ -114,15 +124,21 @@ class NovamobGym(gym.Env):
         # Convert the readings to a string and remove brackets
         lidar_readings_str = str(lidar_readings).replace('[', '').replace(']', '')
         # Split the string into separate elements and convert them to floats
-        lidar_readings_columns = [float(x) for x in lidar_readings_str.split(',')]
+        lidar_readings_columns = [np.float32(x) for x in lidar_readings_str.split(',')]
         # Store the LiDAR data in a numpy array
         self.lidar_data = np.array(lidar_readings_columns)
         self.obstacle_distance = np.min(self.lidar_data)
+
+        self.lidar_read += 1
+        print(f"LiDAR read: {self.lidar_read}")
 
 
     def clock_callback(self, msg):
         # Store the time elapsed
         self.current_time = msg.clock.sec
+
+        self.clock_read += 1
+        print(f"Clock read: {self.clock_read}")
 
 
     def step(self, action):
@@ -131,6 +147,22 @@ class NovamobGym(gym.Env):
         twist.linear.x = float(action['linear_x'][0])  # Linear velocity
         twist.angular.z = float(action['angular_z'][0])  # Angular velocity
         self.cmd_vel_publisher.publish(twist)
+
+        if self.unpause_client.wait_for_service(timeout_sec=1.0):
+            try:
+                self.unpause_client.call(Empty.Request())
+            except (rclpy.ServiceException) as e:
+                print("/gazebo/unpause_physics service call failed")
+
+        # propagate state for TIME_DELTA seconds
+        for _ in range(int(TIME_DELTA * 10)):
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+        if self.pause_client.wait_for_service(timeout_sec=1.0):
+            try:
+                self.pause_client.call(Empty.Request())
+            except (rclpy.ServiceException) as e:
+                print("/gazebo/pause_physics service call failed")
 
         # Check the status of the robot
         # Verifies the time elapsed, distance to the goal, distance to obstacles, and robot tilt and concludes if the episode is done
@@ -141,8 +173,10 @@ class NovamobGym(gym.Env):
         # TODO - Implement the reward function
         reward = -np.sum(np.square(self.robot_state))
 
+        # ! - the subscribers are still only updating one at each time and the odom never updates... NEED TO FIX
         state = {'lidar': self.lidar_data, 'position': self.robot_state, 'robot_tilt': self.robot_tilt}
-        
+
+
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
 
@@ -151,6 +185,7 @@ class NovamobGym(gym.Env):
         truncated = False
 
         return state, reward, terminated, truncated, {}
+
 
     def reset(self, seed=None, options=None):
         # Set the seed if provided
@@ -175,26 +210,36 @@ class NovamobGym(gym.Env):
         self.episode_deadline = self.current_time + MAX_EPISODE_TIME
         self.done = False
 
-        self.lidar_data = np.zeros(360, dtype=np.float32)
-        self.robot_state = np.zeros(2, dtype=np.float32)
-        self.robot_tilt = np.zeros(2, dtype=np.float32)
-        self.obstacle_distance = np.inf
+        if self.unpause_client.wait_for_service(timeout_sec=1.0):
+            try:
+                self.unpause_client.call(Empty.Request())
+            except (rclpy.ServiceException) as e:
+                print("/gazebo/unpause_physics service call failed")
 
-        state = {
-            'position': self.robot_state,
-            'robot_tilt': self.robot_tilt,
-            'lidar': self.lidar_data
-        }
+        # propagate state for TIME_DELTA seconds
+        for _ in range(int(TIME_DELTA * 10)):
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+        if self.pause_client.wait_for_service(timeout_sec=1.0):
+            try:
+                self.pause_client.call(Empty.Request())
+            except (rclpy.ServiceException) as e:
+                print("/gazebo/pause_physics service call failed")
+
+        state = {'position': self.robot_state, 'robot_tilt': self.robot_tilt, 'lidar': self.lidar_data}
 
         return state, {}
-    
+
+
     def seed(self, seed=None):
         self.np_random, seed = gym.utils.seeding.np_random(seed)
         return [seed]
 
+
     def is_done(self):
         # Define a condition to end the episode
         return False
+
 
     def close(self):
         if self.node:
@@ -202,17 +247,14 @@ class NovamobGym(gym.Env):
         if rclpy.ok():
             rclpy.shutdown()
 
-    # def render(self, mode='human'):
-    #     # Render the environment for visualization
-    #     pass
 
     def __del__(self):
         self.close()
 
+
 def get_status(self):
     done = False
 
-    print(f"Current Time: {self.current_time}")
     self.robot_status = UNKNOWN
 
     if self.goal_distance < GOAL_THRESHOLD:
@@ -227,6 +269,7 @@ def get_status(self):
     if self.robot_status != UNKNOWN:
         done = True
     return done
+
 
 def main(args=None):
     env = NovamobGym()
