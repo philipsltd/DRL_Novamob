@@ -1,10 +1,12 @@
 import time
+import threading
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.executors import MultiThreadedExecutor
 
 # ROS 2 message imports
 from std_msgs.msg import String
@@ -101,47 +103,92 @@ class NovamobGym(gym.Env):
         self.odom_read = 0
         self.clock_read = 0
 
+        # Flags to check if data is updated
+        self.lidar_updated = False
+        self.odom_updated = False
+        self.clock_updated = False
+
         # Initialize the random number generator
         self.np_random = np.random.RandomState(42)
 
+        # Initialize threading locks
+        self.lidar_lock = threading.Lock()
+        self.odom_lock = threading.Lock()
+        self.clock_lock = threading.Lock()
+
+        # Start the MultiThreadedExecutor
+        self.executor = MultiThreadedExecutor()
+        self.executor.add_node(self.node)
+        self.executor_thread = threading.Thread(target=self.executor.spin, daemon=True)
+        self.executor_thread.start()
+
+
+    def spin_odom(self):
+        while rclpy.ok():
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+    def spin_lidar(self):
+        while rclpy.ok():
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+    def spin_clock(self):
+        while rclpy.ok():
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
 
     def odom_callback(self, msg):
-        # Store the robot state and tilt
-        self.robot_state[0] = msg.pose.pose.position.x
-        self.robot_state[1] = msg.pose.pose.position.y
-        self.robot_tilt[0] = msg.pose.pose.orientation.x
-        self.robot_tilt[1] = msg.pose.pose.orientation.y
+        with self.odom_lock:
+            # Store the robot state and tilt
+            self.robot_state[0] = msg.pose.pose.position.x
+            self.robot_state[1] = msg.pose.pose.position.y
+            self.robot_tilt[0] = msg.pose.pose.orientation.x
+            self.robot_tilt[1] = msg.pose.pose.orientation.y
+            self.odom_updated = True
 
         self.odom_read += 1
         print(f"Odom read: {self.odom_read}")
 
 
     def lidar_callback(self, msg):
-        # Process LiDAR data (extract X, Y, Z and potentially preprocess)
-        lidar_readings = list(msg.ranges)
-        # Handle infinite values returned by the LiDAR sensor
-        lidar_readings = [1e6 if x == float('inf') else x for x in lidar_readings]
-        # Convert the readings to a string and remove brackets
-        lidar_readings_str = str(lidar_readings).replace('[', '').replace(']', '')
-        # Split the string into separate elements and convert them to floats
-        lidar_readings_columns = [np.float32(x) for x in lidar_readings_str.split(',')]
-        # Store the LiDAR data in a numpy array
-        self.lidar_data = np.array(lidar_readings_columns)
-        self.obstacle_distance = np.min(self.lidar_data)
+        with self.lidar_lock:
+            # Process LiDAR data (extract X, Y, Z and potentially preprocess)
+            lidar_readings = list(msg.ranges)
+            # Handle infinite values returned by the LiDAR sensor
+            lidar_readings = [1e6 if x == float('inf') else x for x in lidar_readings]
+            # Convert the readings to a string and remove brackets
+            lidar_readings_str = str(lidar_readings).replace('[', '').replace(']', '')
+            # Split the string into separate elements and convert them to floats
+            lidar_readings_columns = [np.float32(x) for x in lidar_readings_str.split(',')]
+            # Store the LiDAR data in a numpy array
+            self.lidar_data = np.array(lidar_readings_columns)
+            self.obstacle_distance = np.min(self.lidar_data)
+            self.lidar_updated = True
 
         self.lidar_read += 1
         print(f"LiDAR read: {self.lidar_read}")
 
 
     def clock_callback(self, msg):
-        # Store the time elapsed
-        self.current_time = msg.clock.sec
+        with self.clock_lock:
+            # Store the time elapsed
+            self.current_time = msg.clock.sec
+            self.clock_updated = True
 
         self.clock_read += 1
         print(f"Clock read: {self.clock_read}")
 
 
     def step(self, action):
+        # Wait until data from all topics has been read at least once
+        while not (self.lidar_updated and self.odom_updated and self.clock_updated):
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        # Reset the update flags
+        self.lidar_updated = False
+        # self.data_ready.wait()
+        self.odom_updated = False
+        # self.data_ready.clear()
+        self.clock_updated = False
+
         # Send action to robot
         twist = Twist()
         twist.linear.x = float(action['linear_x'][0])  # Linear velocity
@@ -171,14 +218,20 @@ class NovamobGym(gym.Env):
         # Verifies the time elapsed, distance to the goal, distance to obstacles, and robot tilt and concludes if the episode is done
         done = self.is_done()
 
-        self.get_status(self)
+        self.get_status()
         # Calculate the reward
         # TODO - Implement the reward function
         reward = -np.sum(np.square(self.robot_state))
 
-        # ! - the subscribers are still only updating one at each time... NEED TO FIX
-        state = {'lidar': self.lidar_data, 'position': self.robot_state, 'robot_tilt': self.robot_tilt}
+        # Acquire the locks to read the data safely
+        with self.lidar_lock:
+            lidar_data = self.lidar_data.copy()
+        with self.odom_lock:
+            robot_state = self.robot_state.copy()
+            robot_tilt = self.robot_tilt.copy()
 
+        # ! - the subscribers are still only updating one at each time... NEED TO FIX
+        state = {'lidar': lidar_data, 'position': robot_state, 'robot_tilt': robot_tilt}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
@@ -229,7 +282,13 @@ class NovamobGym(gym.Env):
             except (rclpy.ServiceException) as e:
                 print("/gazebo/pause_physics service call failed")
 
-        state = {'position': self.robot_state, 'robot_tilt': self.robot_tilt, 'lidar': self.lidar_data}
+        with self.lidar_lock:
+            lidar_data = self.lidar_data.copy()
+        with self.odom_lock:
+            robot_state = self.robot_state.copy()
+            robot_tilt = self.robot_tilt.copy()
+
+        state = {'position': robot_state, 'robot_tilt': robot_tilt, 'lidar': lidar_data}
 
         return state, {}
 
@@ -249,6 +308,9 @@ class NovamobGym(gym.Env):
             self.node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        if self.executor_thread.is_alive():
+            self.executor.shutdown()
+            self.executor_thread.join()
 
 
     def __del__(self):
