@@ -18,25 +18,13 @@ from nav_msgs.msg import Odometry
 # ROS 2 Service imports
 from std_srvs.srv import Empty
 
-# # -- Environment Constants --
-# from common.settings import MAX_EPISODE_TIME, GOAL_THRESHOLD, COLLISION_DISTANCE, MAX_TILT
-# # -- Possible Outcomes --
-# from common.settings import UNKNOWN, GOAL_REACHED, COLLISION, TIMEOUT, ROLLED_OVER
+# -- Environment Constants --
+from common.settings import MAX_EPISODE_TIME, GOAL_THRESHOLD, COLLISION_DISTANCE, MAX_TILT, TIME_DELTA
+# -- Possible Outcomes --
+from common.settings import UNKNOWN, GOAL_REACHED, COLLISION, TIMEOUT, ROLLED_OVER, REWARD_FUNCTION
 
-# Define environment constants that can be manipulated
-MAX_EPISODE_TIME = 60  # seconds
-GOAL_THRESHOLD = 0.1  # meters
-COLLISION_DISTANCE = 0.1  # meters
-MAX_TILT = 1.57  # radians = 90 degrees
-TIME_DELTA = 0.1  # seconds
-
-
-# Define the possible outcomes of the episode to calculate the reward
-UNKNOWN = 0
-GOAL_REACHED = 1
-COLLISION = 2
-TIMEOUT = 3
-ROLLED_OVER = 4
+# -- Reward Functions --
+import reward
 
 
 class NovamobGym(gym.Env):
@@ -45,6 +33,8 @@ class NovamobGym(gym.Env):
         if not rclpy.ok():
             rclpy.init(args=None)
         self.node = rclpy.create_node('gym_novamob_env')
+
+        reward.setup_reward_function(REWARD_FUNCTION)
 
         # * Define action and observation space
         # the action space is a dictionary with two keys: linear_x and angular_z velocities
@@ -98,6 +88,8 @@ class NovamobGym(gym.Env):
         self.robot_tilt = np.zeros(2, dtype=np.float32)
         self.current_time = 0
         self.episode_deadline = np.inf
+        self.robot_status = UNKNOWN
+        self.reward = 0.0
 
         self.lidar_read = 0
         self.odom_read = 0
@@ -220,8 +212,7 @@ class NovamobGym(gym.Env):
 
         self.get_status()
         # Calculate the reward
-        # TODO - Implement the reward function
-        reward = -np.sum(np.square(self.robot_state))
+        self.reward = reward.get_reward()
 
         # Acquire the locks to read the data safely
         with self.lidar_lock:
@@ -230,7 +221,6 @@ class NovamobGym(gym.Env):
             robot_state = self.robot_state.copy()
             robot_tilt = self.robot_tilt.copy()
 
-        # ! - the subscribers are still only updating one at each time... NEED TO FIX
         state = {'lidar': lidar_data, 'position': robot_state, 'robot_tilt': robot_tilt}
 
         # Ensure the state is within the observation space and has the correct dtype
@@ -288,6 +278,7 @@ class NovamobGym(gym.Env):
             robot_state = self.robot_state.copy()
             robot_tilt = self.robot_tilt.copy()
 
+        reward.reward_init(self.goal_distance)
         state = {'position': robot_state, 'robot_tilt': robot_tilt, 'lidar': lidar_data}
 
         return state, {}
@@ -300,6 +291,8 @@ class NovamobGym(gym.Env):
 
     def is_done(self):
         # Define a condition to end the episode
+        if self.robot_status != UNKNOWN:
+            return True
         return False
 
 
@@ -319,8 +312,6 @@ class NovamobGym(gym.Env):
 
     def get_status(self):
         done = False
-
-        self.robot_status = UNKNOWN
 
         if self.goal_distance < GOAL_THRESHOLD:
             self.robot_status = GOAL_REACHED

@@ -4,6 +4,8 @@ import gymnasium as gym
 import rclpy
 import novamob_gym
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src/novamob_gym/novamob_gym'))
+
 def test_environment():
     # Initialize the environment using gym.make
     env = gym.make('NovamobGym-v0')

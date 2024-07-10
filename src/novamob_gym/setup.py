@@ -11,7 +11,12 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'gymnasium', 'numpy', 'rclpy'],
+    install_requires=[
+        'setuptools',
+        'gymnasium',
+        'numpy',
+        'rclpy',
+    ],
     zip_safe=True,
     maintainer='filipe',
     maintainer_email='feduardomorais@gmail.com',
