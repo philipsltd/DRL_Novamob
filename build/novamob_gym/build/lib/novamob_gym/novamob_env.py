@@ -21,10 +21,13 @@ from std_srvs.srv import Empty
 # -- Environment Constants --
 from common.settings import MAX_EPISODE_TIME, GOAL_THRESHOLD, COLLISION_DISTANCE, MAX_TILT, TIME_DELTA
 # -- Possible Outcomes --
-from common.settings import UNKNOWN, GOAL_REACHED, COLLISION, TIMEOUT, ROLLED_OVER, REWARD_FUNCTION
+from common.settings import UNKNOWN, GOAL_REACHED, COLLISION, TIMEOUT, ROLLED_OVER
+# -- Topic Names --
+from common.settings import VEL_TOPIC, ODOM_TOPIC, LIDAR_TOPIC
+
 
 # -- Reward Functions --
-import reward
+import reward as rw
 
 
 class NovamobGym(gym.Env):
@@ -33,8 +36,6 @@ class NovamobGym(gym.Env):
         if not rclpy.ok():
             rclpy.init(args=None)
         self.node = rclpy.create_node('gym_novamob_env')
-
-        reward.setup_reward_function(REWARD_FUNCTION)
 
         # * Define action and observation space
         # the action space is a dictionary with two keys: linear_x and angular_z velocities
@@ -60,19 +61,16 @@ class NovamobGym(gym.Env):
 
         # Publishers 
         self.cmd_vel_publisher = self.node.create_publisher(Twist, 
-                                                            '/cmd_vel',
+                                                            VEL_TOPIC,
                                                             1)
-        self.publisher = self.node.create_publisher(String, 
-                                                    '/robot/command',
-                                                    10)
 
         # Subscribers
         self.odom_subscription = self.node.create_subscription(Odometry,
-                                                               '/odom',
+                                                               ODOM_TOPIC,
                                                                self.odom_callback,
                                                                10)
         self.lidar_subscription = self.node.create_subscription(LaserScan,
-                                                                '/scan',
+                                                                LIDAR_TOPIC,
                                                                 self.lidar_callback,
                                                                 1)
         self.clock_subscription = self.node.create_subscription(Clock,
@@ -89,7 +87,6 @@ class NovamobGym(gym.Env):
         self.current_time = 0
         self.episode_deadline = np.inf
         self.robot_status = UNKNOWN
-        self.reward = 0.0
 
         self.lidar_read = 0
         self.odom_read = 0
@@ -207,12 +204,15 @@ class NovamobGym(gym.Env):
 
 
         # Check the status of the robot
-        # Verifies the time elapsed, distance to the goal, distance to obstacles, and robot tilt and concludes if the episode is done
-        done = self.is_done()
-
+        # Verifies the time elapsed, distance to the goal, distance to obstacles, and robot tilt to conclude the episode status
+        print("Checking status...")
+        print(f"Obstacle distance: {self.obstacle_distance}")
         self.get_status()
-        # Calculate the reward
-        self.reward = reward.get_reward()
+        print(f"Robot status: {self.robot_status}")
+
+        # Calculate the reward and check if the episode is done
+        done = self.is_done()
+        reward = rw.get_reward(self.robot_status)
 
         # Acquire the locks to read the data safely
         with self.lidar_lock:
@@ -278,7 +278,7 @@ class NovamobGym(gym.Env):
             robot_state = self.robot_state.copy()
             robot_tilt = self.robot_tilt.copy()
 
-        reward.reward_init(self.goal_distance)
+        rw.reward_init(self.goal_distance)
         state = {'position': robot_state, 'robot_tilt': robot_tilt, 'lidar': lidar_data}
 
         return state, {}
@@ -337,16 +337,17 @@ def main(args=None):
     step_count = 0
     
     # Test loop - you can define the number of steps you want to test
-    while not done and step_count < 10:  # Test for 10 steps
+    while not done and step_count < 50:  # Test for 5 steps
         # Sample a random action
         action = env.action_space.sample()
-        print(f"Step {step_count}: Action: {action}")
+        # print(f"Step {step_count}: Action: {action}")
         
         # Take a step in the environment
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
         
         # Print the results of the step
-        print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {done}")
+        # print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {terminated}")
+        print(f"Step: {step_count}, Reward: {reward}, Done: {terminated}")
         
         step_count += 1
     
