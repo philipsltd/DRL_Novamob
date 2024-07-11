@@ -87,6 +87,7 @@ class NovamobGym(gym.Env):
         self.current_time = 0
         self.episode_deadline = np.inf
         self.robot_status = UNKNOWN
+        self.cummulative_reward = 0.0
 
         self.lidar_read = 0
         self.odom_read = 0
@@ -135,7 +136,6 @@ class NovamobGym(gym.Env):
             self.odom_updated = True
 
         self.odom_read += 1
-        print(f"Odom read: {self.odom_read}")
 
 
     def lidar_callback(self, msg):
@@ -154,7 +154,6 @@ class NovamobGym(gym.Env):
             self.lidar_updated = True
 
         self.lidar_read += 1
-        print(f"LiDAR read: {self.lidar_read}")
 
 
     def clock_callback(self, msg):
@@ -164,7 +163,6 @@ class NovamobGym(gym.Env):
             self.clock_updated = True
 
         self.clock_read += 1
-        print(f"Clock read: {self.clock_read}")
 
 
     def step(self, action):
@@ -212,7 +210,8 @@ class NovamobGym(gym.Env):
 
         # Calculate the reward and check if the episode is done
         done = self.is_done()
-        reward = rw.get_reward(self.robot_status)
+        reward = rw.get_reward(self.cummulative_reward, self.robot_status)
+        self.cummulative_reward = reward
 
         # Acquire the locks to read the data safely
         with self.lidar_lock:
