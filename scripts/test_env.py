@@ -21,14 +21,13 @@ def test_environment():
     while not done and step_count < 50:  # Test for 5 steps
         # Sample a random action
         action = env.action_space.sample()
-        # print(f"Step {step_count}: Action: {action}")
         
         # Take a step in the environment
         obs, reward, terminated, truncated, info = env.step(action)
         
         # Print the results of the step
-        # print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {terminated}")
-        print(f"Step: {step_count}, Reward: {reward}, Done: {terminated}")
+        print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {terminated}")
+        # print(f"Step: {step_count}, Reward: {reward}, Done: {terminated}")
         
         step_count += 1
     
