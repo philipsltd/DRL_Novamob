@@ -1,2 +1,3 @@
 [console_scripts]
 novamob_env = novamob_gym.novamob_env:main
+

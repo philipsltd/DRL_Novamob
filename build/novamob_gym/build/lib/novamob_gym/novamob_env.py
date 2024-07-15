@@ -325,6 +325,22 @@ class NovamobGym(gym.Env):
             done = True
         return done
 
+    # TODO - implement procedure to update the goals for the robot
+    def change_goal(self):
+        while goal_check != True:
+            self.goal_x = self.robot_state[0] + self.np_random.uniform(-10, 10)
+            self.goal_y = self.robot_state[1] + self.np_random.uniform(-10, 10)
+            goal_check = check_position(self.goal_x, self.goal_y)
+
+
+# TODO - Implement a function to check if the goal position is valid
+def check_position(x, y):
+    if x > 0 and x < 10:
+        return True
+    if y > 0 and y < 10:
+        return True
+    
+
 
 def main(args=None):
     env = NovamobGym()

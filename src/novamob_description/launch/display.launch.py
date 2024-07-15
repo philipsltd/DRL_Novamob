@@ -9,7 +9,8 @@ def generate_launch_description():
     default_rviz_config_path = os.path.join(pkg_share, 'rviz/urdf_config.rviz')
     # world_path=os.path.join(pkg_share, 'world/outdoor.world')
     # world_path=os.path.join(pkg_share, 'world/indoor_2.world')
-    world_path=os.path.join(pkg_share, 'world/myworld.sdf')
+    # world_path=os.path.join(pkg_share, 'world/myworld.sdf')
+    world_path=os.path.join(pkg_share, 'world/circular_world/model.sdf')
 
     robot_state_publisher_node = launch_ros.actions.Node(
         package='robot_state_publisher',

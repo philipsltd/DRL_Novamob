@@ -335,7 +335,11 @@ class NovamobGym(gym.Env):
 
 # TODO - Implement a function to check if the goal position is valid
 def check_position(x, y):
-    pass
+    if x > 0 and x < 10:
+        return True
+    if y > 0 and y < 10:
+        return True
+    
 
 
 def main(args=None):
