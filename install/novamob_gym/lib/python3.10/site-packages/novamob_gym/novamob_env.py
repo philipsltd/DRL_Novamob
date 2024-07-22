@@ -39,7 +39,7 @@ class NovamobGym(gym.Env):
 
         # * Define action and observation space
         # the action space is a dictionary with two keys: linear_x and angular_z velocities
-        self.action_space = spaces.Dict({'linear_x': spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+        self.action_space = spaces.Dict({'linear_x': spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
                                          'angular_z': spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)})
         
         # the observation space is a continuous space with 1080 values from the lidar sensor
@@ -77,7 +77,7 @@ class NovamobGym(gym.Env):
                                                                 '/clock',
                                                                 self.clock_callback,
                                                                 qos_profile=clock_qos_profile)
-        
+
         # Place holder and initialization for data
         self.lidar_data = np.zeros(360, dtype=np.float32)
         self.goal_distance = np.inf
@@ -88,10 +88,6 @@ class NovamobGym(gym.Env):
         self.episode_deadline = np.inf
         self.robot_status = UNKNOWN
         self.cummulative_reward = 0.0
-
-        self.lidar_read = 0
-        self.odom_read = 0
-        self.clock_read = 0
 
         # Flags to check if data is updated
         self.lidar_updated = False
@@ -111,6 +107,13 @@ class NovamobGym(gym.Env):
         self.executor.add_node(self.node)
         self.executor_thread = threading.Thread(target=self.executor.spin, daemon=True)
         self.executor_thread.start()
+
+        # Initialize the goal position and reward function
+        self.goal_x = 0.0
+        self.goal_y = 0.0
+        self.change_goal()
+        rw.reward_init(self.goal_distance)
+        print(f"Environment initialized with goal at: ({self.goal_x}, {self.goal_y})")
 
 
     def spin_odom(self):
@@ -135,8 +138,6 @@ class NovamobGym(gym.Env):
             self.robot_tilt[1] = msg.pose.pose.orientation.y
             self.odom_updated = True
 
-        self.odom_read += 1
-
 
     def lidar_callback(self, msg):
         with self.lidar_lock:
@@ -153,16 +154,12 @@ class NovamobGym(gym.Env):
             self.obstacle_distance = np.min(self.lidar_data)
             self.lidar_updated = True
 
-        self.lidar_read += 1
-
 
     def clock_callback(self, msg):
         with self.clock_lock:
             # Store the time elapsed
             self.current_time = msg.clock.sec
             self.clock_updated = True
-
-        self.clock_read += 1
 
 
     def step(self, action):
@@ -191,7 +188,7 @@ class NovamobGym(gym.Env):
                 print("/gazebo/unpause_physics service call failed")
 
         # propagate state for TIME_DELTA seconds
-        for _ in range(int(TIME_DELTA * 10)):
+        for _ in range(int(TIME_DELTA)):
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
         if self.pause_client.wait_for_service(timeout_sec=1.0):
@@ -210,7 +207,7 @@ class NovamobGym(gym.Env):
 
         # Calculate the reward and check if the episode is done
         done = self.is_done()
-        reward = rw.get_reward(self.cummulative_reward, self.robot_status)
+        reward = rw.get_reward(self.cummulative_reward, self.robot_status, self.obstacle_distance)
         self.cummulative_reward = reward
 
         # Acquire the locks to read the data safely
@@ -253,7 +250,20 @@ class NovamobGym(gym.Env):
         # Stop the robot and reset the episode
         self.cmd_vel_publisher.publish(Twist())  # stop robot
         self.episode_deadline = self.current_time + MAX_EPISODE_TIME
-        self.done = False
+        
+        self.change_goal()
+
+        rw.reward_init(self.goal_distance)
+
+        self.robot_state = np.zeros(2, dtype=np.float32)
+        self.robot_tilt = np.zeros(2, dtype=np.float32)
+        self.obstacle_distance = np.inf
+        self.robot_status = UNKNOWN
+        # self.cummulative_reward = 0.0
+        
+        self.lidar_updated = False
+        self.odom_updated = False
+        self.clock_updated = False
 
         if self.unpause_client.wait_for_service(timeout_sec=1.0):
             try:
@@ -262,7 +272,7 @@ class NovamobGym(gym.Env):
                 print("/gazebo/unpause_physics service call failed")
 
         # propagate state for TIME_DELTA seconds
-        for _ in range(int(TIME_DELTA * 10)):
+        for _ in range(int(TIME_DELTA)):
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
         if self.pause_client.wait_for_service(timeout_sec=1.0):
@@ -277,7 +287,6 @@ class NovamobGym(gym.Env):
             robot_state = self.robot_state.copy()
             robot_tilt = self.robot_tilt.copy()
 
-        rw.reward_init(self.goal_distance)
         state = {'position': robot_state, 'robot_tilt': robot_tilt, 'lidar': lidar_data}
 
         return state, {}
@@ -291,6 +300,7 @@ class NovamobGym(gym.Env):
     def is_done(self):
         # Define a condition to end the episode
         if self.robot_status != UNKNOWN:
+            self.cmd_vel_publisher.publish(Twist())
             return True
         return False
 
@@ -311,6 +321,7 @@ class NovamobGym(gym.Env):
 
     def get_status(self):
         done = False
+        self.robot_status = UNKNOWN
 
         if self.goal_distance < GOAL_THRESHOLD:
             self.robot_status = GOAL_REACHED
@@ -327,19 +338,25 @@ class NovamobGym(gym.Env):
 
     # TODO - implement procedure to update the goals for the robot
     def change_goal(self):
+        goal_check = False
         while goal_check != True:
-            self.goal_x = self.robot_state[0] + self.np_random.uniform(-10, 10)
-            self.goal_y = self.robot_state[1] + self.np_random.uniform(-10, 10)
+            self.goal_x = self.robot_state[0] + self.np_random.uniform(-0.35, 4.1)
+            self.goal_y = self.robot_state[1] + self.np_random.uniform(-0.45, 2.0)
             goal_check = check_position(self.goal_x, self.goal_y)
 
 
 # TODO - Implement a function to check if the goal position is valid
 def check_position(x, y):
-    if x > 0 and x < 10:
-        return True
-    if y > 0 and y < 10:
-        return True
-    
+    goal_check = True
+
+    if x < -0.35 or x > 4.1:
+        goal_check = False
+    if y < -0.45 or y > 2.0:
+        goal_check = False
+    if (x > 0.24 and x < 3.5) and (y > 0.12 and y < 1.37):
+        goal_check = False
+
+    return goal_check
 
 
 def main(args=None):

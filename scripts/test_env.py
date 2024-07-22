@@ -24,10 +24,11 @@ def test_environment():
         
         # Take a step in the environment
         obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated
         
         # Print the results of the step
-        print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {terminated}")
-        # print(f"Step: {step_count}, Reward: {reward}, Done: {terminated}")
+        # print(f"Step {step_count}: Observation: {obs}, Reward: {reward}, Done: {terminated}")
+        print(f"Step: {step_count}, Reward: {reward}, Done: {terminated}")
         
         step_count += 1
     

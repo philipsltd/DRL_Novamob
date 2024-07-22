@@ -1,13 +1,12 @@
 Metadata-Version: 2.1
-Name: novamob-gym
+Name: novamob_gym
 Version: 0.0.0
 Summary: A custom OpenAI Gym environment for interacting with a robot in Gazebo using ROS 2.
-Home-page: UNKNOWN
 Maintainer: filipe
 Maintainer-email: feduardomorais@gmail.com
 License: Apache-2.0
-Platform: UNKNOWN
 License-File: LICENSE
-
-UNKNOWN
-
+Requires-Dist: setuptools
+Requires-Dist: gymnasium
+Requires-Dist: numpy
+Requires-Dist: rclpy

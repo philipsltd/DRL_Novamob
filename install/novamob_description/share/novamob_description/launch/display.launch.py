@@ -10,7 +10,9 @@ def generate_launch_description():
     # world_path=os.path.join(pkg_share, 'world/outdoor.world')
     # world_path=os.path.join(pkg_share, 'world/indoor_2.world')
     # world_path=os.path.join(pkg_share, 'world/myworld.sdf')
-    world_path=os.path.join(pkg_share, 'world/circular_world/model.sdf')
+    # world_path=os.path.join(pkg_share, 'world/model.sdf')
+    # world_path=os.path.join(pkg_share, 'world/square.sdf')
+    world_path=os.path.join(pkg_share, 'world/test.sdf')
 
     robot_state_publisher_node = launch_ros.actions.Node(
         package='robot_state_publisher',
