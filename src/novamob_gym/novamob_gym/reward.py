@@ -12,7 +12,7 @@ initial_goal_distance = 0.0
 
 
 # Step 1: Define your functions
-def get_reward_1(cummulative_reward, robot_status, obstacle_distance):
+def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_angle):
     
     marker_1 = 0.1 * TRACK_WIDTH
     marker_2 = 0.25 * TRACK_WIDTH
@@ -30,11 +30,10 @@ def get_reward_1(cummulative_reward, robot_status, obstacle_distance):
     if robot_status == GOAL_REACHED:
         cummulative_reward += 100
     elif robot_status == TIMEOUT:
-        cummulative_reward -= 10.0
-    elif robot_status == COLLISION:
+        cummulative_reward -= 50.0
+    elif robot_status == COLLISION or robot_status == ROLLED_OVER:
         cummulative_reward -= 20.0
-    elif robot_status == ROLLED_OVER:
-        cummulative_reward -= 30.0
+
     return float(cummulative_reward)
 
 def get_reward_2(robot_status):
@@ -53,14 +52,14 @@ function_dict = {
 }
 
 # Step 3: Implement the function selector based on the constant from the settings file
-def get_reward(cummulative_reward, robot_status, obstacle_distance):
+def get_reward(cummulative_reward, robot_status, obstacle_distance, heading_angle):
     # Get the choice from the settings file
     function_to_use = REWARD_FUNCTION
     
     # Check if the choice exists in the dictionary
     if function_to_use in function_dict:
         # Call the selected function
-        reward = function_dict[function_to_use](cummulative_reward, robot_status, obstacle_distance)
+        reward = function_dict[function_to_use](cummulative_reward, robot_status, obstacle_distance, heading_angle)
         return reward
     else:
         raise ValueError("Invalid choice in settings! Please select a valid function name.")

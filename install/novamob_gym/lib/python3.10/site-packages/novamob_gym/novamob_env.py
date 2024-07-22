@@ -1,4 +1,5 @@
 import time
+import math
 import threading
 import gymnasium as gym
 from gymnasium import spaces
@@ -7,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.executors import MultiThreadedExecutor
+from tf_transformations import euler_from_quaternion
 
 # ROS 2 message imports
 from std_msgs.msg import String
@@ -113,7 +115,6 @@ class NovamobGym(gym.Env):
         self.goal_y = 0.0
         self.change_goal()
         rw.reward_init(self.goal_distance)
-        print(f"Environment initialized with goal at: ({self.goal_x}, {self.goal_y})")
 
 
     def spin_odom(self):
@@ -137,6 +138,22 @@ class NovamobGym(gym.Env):
             self.robot_tilt[0] = msg.pose.pose.orientation.x
             self.robot_tilt[1] = msg.pose.pose.orientation.y
             self.odom_updated = True
+
+            # Extract quaternion from odometry message
+            orientation_q = msg.pose.pose.orientation
+            orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+
+            # Convert quaternion to Euler angles
+            roll, pitch, yaw = euler_from_quaternion(orientation_list)
+
+            # Convert yaw from radians to degrees
+            heading = math.degrees(yaw) % 360
+            if heading < 180:
+                heading = heading
+            else:
+                heading = heading - 360
+
+            print(f"Heading: {heading}")
 
 
     def lidar_callback(self, msg):
@@ -200,10 +217,10 @@ class NovamobGym(gym.Env):
 
         # Check the status of the robot
         # Verifies the time elapsed, distance to the goal, distance to obstacles, and robot tilt to conclude the episode status
-        print("Checking status...")
-        print(f"Obstacle distance: {self.obstacle_distance}")
+        # print("Checking status...")
+        # print(f"Obstacle distance: {self.obstacle_distance}")
         self.get_status()
-        print(f"Robot status: {self.robot_status}")
+        # print(f"Robot status: {self.robot_status}")
 
         # Calculate the reward and check if the episode is done
         done = self.is_done()

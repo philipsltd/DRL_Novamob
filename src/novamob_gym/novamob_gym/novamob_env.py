@@ -1,4 +1,5 @@
 import time
+import math
 import threading
 import gymnasium as gym
 from gymnasium import spaces
@@ -7,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.executors import MultiThreadedExecutor
+from tf_transformations import euler_from_quaternion
 
 # ROS 2 message imports
 from std_msgs.msg import String
@@ -84,6 +86,7 @@ class NovamobGym(gym.Env):
         self.obstacle_distance = np.inf
         self.robot_state = np.zeros(2, dtype=np.float32)
         self.robot_tilt = np.zeros(2, dtype=np.float32)
+        self.heading = 0.0
         self.current_time = 0
         self.episode_deadline = np.inf
         self.robot_status = UNKNOWN
@@ -136,6 +139,22 @@ class NovamobGym(gym.Env):
             self.robot_tilt[0] = msg.pose.pose.orientation.x
             self.robot_tilt[1] = msg.pose.pose.orientation.y
             self.odom_updated = True
+
+            # Extract quaternion from odometry message
+            orientation_q = msg.pose.pose.orientation
+            orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+
+            # Convert quaternion to Euler angles
+            roll, pitch, yaw = euler_from_quaternion(orientation_list)
+
+            # Convert yaw from radians to degrees
+            self.heading = math.degrees(yaw) % 360
+            if self.heading < 180:
+                self.heading = self.heading
+            else:
+                self.heading = self.heading - 360
+
+            print(f"Heading: {self.heading}")
 
 
     def lidar_callback(self, msg):
@@ -206,7 +225,7 @@ class NovamobGym(gym.Env):
 
         # Calculate the reward and check if the episode is done
         done = self.is_done()
-        reward = rw.get_reward(self.cummulative_reward, self.robot_status, self.obstacle_distance)
+        reward = rw.get_reward(self.cummulative_reward, self.robot_status, self.obstacle_distance, self.heading)
         self.cummulative_reward = reward
 
         # Acquire the locks to read the data safely
@@ -258,7 +277,7 @@ class NovamobGym(gym.Env):
         self.robot_tilt = np.zeros(2, dtype=np.float32)
         self.obstacle_distance = np.inf
         self.robot_status = UNKNOWN
-        # self.cummulative_reward = 0.0
+        self.heading = 0.0
         
         self.lidar_updated = False
         self.odom_updated = False
