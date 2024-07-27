@@ -18,7 +18,8 @@ def test_environment():
     step_count = 0
     
     # Test loop - you can define the number of steps you want to test
-    while not done and step_count < 50:  # Test for 5 steps
+    # while not done and step_count < 50:  # Test for 5 steps
+    while step_count < 50:
         # Sample a random action
         action = env.action_space.sample()
         

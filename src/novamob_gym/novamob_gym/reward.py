@@ -21,41 +21,50 @@ def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_an
     # marker_3 = 0.45 * TRACK_WIDTH   # since the obstable_distance is the distance between the robot and the wall the maximum reward comes when it is driving between 0.45 and 0.5 of the track width. obstacle distance is always smaller or equal to the half the track width
 
     # Define the ideal distance to the walls (half the track width)
-    ideal_distance = 0.5 * TRACK_WIDTH
+    ideal_distance = 0.45 * TRACK_WIDTH
+
+    print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
+    print(f"[DEBUG] distance to goal: {distance_to_goal}")
+    print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
 
     # Distance to goal reward
     if distance_to_goal < initial_goal_distance:
         cummulative_reward += 2.0
-    elif distance_to_goal > initial_goal_distance:
-        cummulative_reward -= 2.0
+    elif distance_to_goal >= initial_goal_distance:
+        cummulative_reward -= 1.0
+
+    # print(f"Reward with distance to goal: {cummulative_reward}")
 
     # Reward based on how close the robot is to the ideal distance
     distance_error = abs(obstacle_distance - ideal_distance)
-    distance_reward = max(0, 10.0 - (distance_error / ideal_distance) * 10.0)  # Reward decreases as error increases
+    distance_reward = max(0, 5.0 - (distance_error / ideal_distance) * 5.0)  # Reward decreases as error increases
+    cummulative_reward += distance_reward
     
     # ! need to add the angle of the robot to the reward function
 
-    if heading_angle > -5 and heading_angle < 5:
+    if heading_angle >= -5 and heading_angle <= 5:
         if linear_speed > 0.8:
-            cummulative_reward += 2.0
+            cummulative_reward += 1.0
         elif linear_speed > 0.5:
-            cummulative_reward += 1.0
-    elif heading_angle < -20 and heading_angle > 20:
+            cummulative_reward += 0.5
+    elif abs(heading_angle) > 20:
         if linear_speed < 0.8:
-            cummulative_reward += 1.0
+            cummulative_reward += 0.5
         elif linear_speed < 0.6:
-            cummulative_reward += 2.0
+            cummulative_reward += 1.0
 
     if linear_speed < 0.0:
         cummulative_reward -= 5.0
 
     if robot_status == GOAL_REACHED:
-        cummulative_reward += 100
+        cummulative_reward += 100.0
     elif robot_status == TIMEOUT:
-        cummulative_reward -= 50.0
-    elif robot_status == COLLISION or robot_status == ROLLED_OVER:
         cummulative_reward -= 20.0
+    elif robot_status == COLLISION or robot_status == ROLLED_OVER:
+        cummulative_reward -= 15.0
 
+    # Baseline reward for each step
+    cummulative_reward += 0.1
     initial_goal_distance = distance_to_goal
 
     return float(cummulative_reward)

@@ -13,6 +13,7 @@ novamob_gym/__init__.py
 novamob_gym/novamob_env.py
 novamob_gym/reward.py
 novamob_gym/common/__init__.py
+novamob_gym/common/novamob_env.py
 novamob_gym/common/settings.py
 resource/novamob_gym
 test/test_copyright.py

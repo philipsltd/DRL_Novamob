@@ -2,7 +2,7 @@ import sys
 import os
 import gymnasium as gym
 import rclpy
-from stable_baselines3 import SAC
+from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 import novamob_gym
 
@@ -12,16 +12,16 @@ def train_environment():
     # Initialize the environment using gym.make
     env = DummyVecEnv([lambda: gym.make('NovamobGym-v0')])
 
-    model = SAC('MultiInputPolicy', env, verbose=1, tensorboard_log="./sac_novamob_tensorboard/", device='cpu')
+    model = PPO('MultiInputPolicy', env, verbose=1, tensorboard_log="./ppo_novamob_tensorboard/", device='cpu')
     
     # Train the agent
-    model.learn(total_timesteps=100000)  # Adjust the number of timesteps as needed
+    model.learn(total_timesteps=10000)  # Adjust the number of timesteps as needed
     
     # Save the trained model
-    model.save("sac_novamob_model")
+    model.save("ppo_novamob_model")
 
     # Load the trained model
-    model = SAC.load("sac_novamob_model")
+    model = PPO.load("ppo_novamob_model")
 
     # Evaluate the trained agent
     obs = env.reset()
