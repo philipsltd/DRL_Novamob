@@ -101,6 +101,7 @@ class NovamobGym(gym.Env):
         self.change_goal()
         rw.reward_init(self.goal_distance)
 
+
     def odom_callback(self, msg):
         # Store the robot state and tilt
         self.robot_state[0] = msg.pose.pose.position.x
@@ -123,6 +124,7 @@ class NovamobGym(gym.Env):
 
         self.odom_updated.set()
 
+
     def lidar_callback(self, msg):
         # Process LiDAR data
         lidar_readings = [min(x, 10.0) if x == float('inf') else x for x in msg.ranges]
@@ -130,10 +132,12 @@ class NovamobGym(gym.Env):
         self.obstacle_distance = np.min(self.lidar_data)
         self.lidar_updated.set()
 
+
     def clock_callback(self, msg):
         # Store the time elapsed
         self.current_time = msg.clock.sec
         self.clock_updated.set()
+
 
     def step(self, action):
         # Wait until data from all topics has been read at least once
@@ -184,6 +188,7 @@ class NovamobGym(gym.Env):
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
 
+        # New API requires `terminated` and `truncated` flags
         terminated = done
         truncated = False
 
@@ -259,6 +264,7 @@ class NovamobGym(gym.Env):
             return True
         return False
 
+
     def change_goal(self):
         if self.goal_index == len(self.goal_array):
             self.goal_index = 0
@@ -277,4 +283,3 @@ class NovamobGym(gym.Env):
         if self.executor_thread.is_alive():
             self.executor.shutdown()
             self.executor_thread.join()
-

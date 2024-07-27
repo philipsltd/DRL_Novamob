@@ -7,9 +7,9 @@ initial_goal_distance = 0.0
 
 # TODO - Implement reward functions
 
-# ! perfrom reward when the robot is close to the middle of the road through the measurement of the lidar distance. add 3 levels of obstacle distance that represent the desired distance to the walls.
+# perfrom reward when the robot is close to the middle of the road through the measurement of the lidar distance. add 3 levels of obstacle distance that represent the desired distance to the walls.
 
-# ! use the angle of the robot to slow down during turning and increase speed when going straight
+# use the angle of the robot to slow down during turning and increase speed when going straight
 
 
 # Step 1: Define your functions
@@ -33,14 +33,10 @@ def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_an
     elif distance_to_goal >= initial_goal_distance:
         cummulative_reward -= 1.0
 
-    # print(f"Reward with distance to goal: {cummulative_reward}")
-
     # Reward based on how close the robot is to the ideal distance
     distance_error = abs(obstacle_distance - ideal_distance)
     distance_reward = max(0, 5.0 - (distance_error / ideal_distance) * 5.0)  # Reward decreases as error increases
     cummulative_reward += distance_reward
-    
-    # ! need to add the angle of the robot to the reward function
 
     if heading_angle >= -5 and heading_angle <= 5:
         if linear_speed > 0.8:
