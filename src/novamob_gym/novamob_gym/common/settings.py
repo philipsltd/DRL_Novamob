@@ -1,7 +1,7 @@
 # Define environment constants that can be manipulated
 MAX_EPISODE_TIME = 60  # seconds
 GOAL_THRESHOLD = 0.1  # meters
-COLLISION_DISTANCE = 0.12  # meters
+COLLISION_DISTANCE = 0.13  # meters
 MAX_TILT = 1.57  # radians = 90 degrees
 TIME_DELTA = 0.01  # seconds
 TRACK_WIDTH = 1.0  # meters
