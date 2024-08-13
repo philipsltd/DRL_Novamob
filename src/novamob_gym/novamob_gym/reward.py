@@ -65,13 +65,38 @@ def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_an
 
     return float(cummulative_reward)
 
-def get_reward_2(robot_status):
-    reward -= 20.0
-    return float(reward)
+
+def get_reward_2(cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag):
+
+    global initial_goal_distance
+    ideal_distance = 0.45 * TRACK_WIDTH
+
+    print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
+    print(f"[DEBUG] distance to goal: {distance_to_goal}")
+    print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
+
+    if reset_flag:
+        initial_goal_distance = distance_to_goal
+        return float(cummulative_reward)
+    
+    cummulative_reward += (initial_goal_distance - distance_to_goal)
+    initial_goal_distance = distance_to_goal
+
+    # Reward based on how close the robot is to the ideal distance
+    distance_error = abs(obstacle_distance - ideal_distance)
+    distance_reward = max(0, 5.0 - (distance_error / ideal_distance) * 5.0)  # Reward decreases as error increases
+    cummulative_reward += distance_reward
+
+    if robot_status == GOAL_REACHED:
+        cummulative_reward += 100.0
+
+    return float(cummulative_reward)
+
 
 def get_reward_3(robot_status):
     reward = -30.0
     return float(reward)
+
 
 # Step 2: Create a dictionary mapping function names to function objects
 function_dict = {
@@ -81,17 +106,18 @@ function_dict = {
 }
 
 # Step 3: Implement the function selector based on the constant from the settings file
-def get_reward(cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal):
+def get_reward(cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag):
     # Get the choice from the settings file
     function_to_use = REWARD_FUNCTION
     
     # Check if the choice exists in the dictionary
     if function_to_use in function_dict:
         # Call the selected function
-        reward = function_dict[function_to_use](cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal)
+        reward = function_dict[function_to_use](cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag)
         return reward
     else:
         raise ValueError("Invalid choice in settings! Please select a valid function name.")
+
 
 def reward_init(init_goal_distance):
     global initial_goal_distance

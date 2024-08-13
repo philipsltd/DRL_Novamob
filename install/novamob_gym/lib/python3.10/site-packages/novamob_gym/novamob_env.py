@@ -6,7 +6,6 @@ from gymnasium import spaces
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.executors import MultiThreadedExecutor
 from tf_transformations import euler_from_quaternion
@@ -44,9 +43,7 @@ class NovamobGym(gym.Env):
         self.action_space = spaces.Box(low=np.array([-1.0, -1.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
         
         # the observation space is a continuous space with 1080 values from the lidar sensor, a continuous position space with 2 values (x, y), and a continuous robot tilt space with 2 values (roll, pitch)
-        self.observation_space = spaces.Dict({'lidar': spaces.Box(low=-np.inf, high=np.inf, shape=(360,), dtype=np.float32),
-                                              'position': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32),
-                                              'robot_tilt': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
+        self.observation_space = spaces.Dict({'position': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32),
                                               })
 
         # Clients
@@ -63,13 +60,10 @@ class NovamobGym(gym.Env):
         # Publishers 
         self.cmd_vel_publisher = self.node.create_publisher(Twist, VEL_TOPIC, 1)
 
-        # Callback groups
-        self.callback_group = ReentrantCallbackGroup()
-
         # Subscribers
-        self.odom_subscription = self.node.create_subscription(Odometry, ODOM_TOPIC, self.odom_callback, 10, callback_group=self.callback_group)
-        self.lidar_subscription = self.node.create_subscription(LaserScan, LIDAR_TOPIC, self.lidar_callback, 1, callback_group=self.callback_group)
-        self.clock_subscription = self.node.create_subscription(Clock, '/clock', self.clock_callback, qos_profile=clock_qos_profile, callback_group=self.callback_group)
+        self.odom_subscription = self.node.create_subscription(Odometry, ODOM_TOPIC, self.odom_callback, 10)
+        self.lidar_subscription = self.node.create_subscription(LaserScan, LIDAR_TOPIC, self.lidar_callback, 1)
+        self.clock_subscription = self.node.create_subscription(Clock, '/clock', self.clock_callback, qos_profile=clock_qos_profile)
 
         # Place holder and initialization for data
         self.lidar_data = np.zeros(360, dtype=np.float32)
@@ -83,13 +77,12 @@ class NovamobGym(gym.Env):
         self.robot_status = UNKNOWN
         self.cummulative_reward = 0.0
 
+        self.reset_flag = False
+
         # Flags to check if data is updated
         self.lidar_updated = threading.Event()
         self.odom_updated = threading.Event()
         self.clock_updated = threading.Event()
-
-        # Flag to check if all data is updated
-        self.update_event = threading.Event()
 
         # Initialize the random number generator
         self.np_random = np.random.RandomState(42)
@@ -103,9 +96,10 @@ class NovamobGym(gym.Env):
         # Initialize the goal position and reward function
         self.goal_index = 0
         self.goal_array = [(3.0, 0.0), (3.0, 1.82), (0.0, 1.0), (0.0, 0.0)]
-        self.goal_x = 0.0
+        self.goal_x = 3.0
         self.goal_y = 0.0
-        self.change_goal()
+        # self.change_goal()
+        self.goal_distance = np.sqrt((self.robot_state[0] - self.goal_x) ** 2 + (self.robot_state[1] - self.goal_y) ** 2)
         rw.reward_init(self.goal_distance)
 
 
@@ -130,74 +124,86 @@ class NovamobGym(gym.Env):
             self.heading -= 360
 
         self.odom_updated.set()
-        self.check_updates()
-
-        print(f"[DEBUG] Robot state: {self.robot_state}, Robot tilt: {self.robot_tilt}, Heading: {self.heading}")
 
 
     def lidar_callback(self, msg):
-        # Process LiDAR data
-        lidar_readings = [min(x, 10.0) if x == float('inf') else x for x in msg.ranges]
-        self.lidar_data = np.array(lidar_readings, dtype=np.float32)
-        self.obstacle_distance = np.min(self.lidar_data)
+        lidar_readings = [min(x, 10.0) if x == float('inf') else x for x in msg.ranges]  # Downsampling
+        lidar_features = self.process_lidar_readings(lidar_readings)
+        self.lidar_data = np.array(list(lidar_features.values()), dtype=np.float32)
+        self.obstacle_distance = lidar_features['min_distance']
         self.lidar_updated.set()
-        self.check_updates()
 
-        print(f"[DEBUG] Obstacle distance: {self.obstacle_distance}")
+
+    def process_lidar_readings(self, readings):
+        features = {
+            'min_distance': float(np.min(readings)),
+            'max_distance': float(np.max(readings)),
+            'average_distance': float(np.mean(readings)),
+            'front_distance': float(np.min(readings[len(readings)//2 - 5:len(readings)//2 + 5])),  # Distance directly in front
+            'left_distance': float(np.min(readings[:10])),  # Distance to the left
+            'right_distance': float(np.min(readings[-10:]))  # Distance to the right
+        }
+        return features
 
 
     def clock_callback(self, msg):
         # Store the time elapsed
         self.current_time = msg.clock.sec
         self.clock_updated.set()
-        self.check_updates()
-
-        print(f"[DEBUG] Time: {self.current_time}")
-
-
-    def check_updates(self):
-        print(f"[DEBUG] lidar: {self.lidar_updated.is_set()}, odom: {self.odom_updated.is_set()}, clock: {self.clock_updated.is_set()}")
-        if self.lidar_updated.is_set() and self.odom_updated.is_set() and self.clock_updated.is_set():
-            self.update_event.set()
-            self.lidar_updated.clear()
-            self.odom_updated.clear()
-            self.clock_updated.clear()
 
 
     def step(self, action):
+        # Wait until data from all topics has been read at least once
+        while not (self.lidar_updated.is_set() and self.odom_updated.is_set() and self.clock_updated.is_set()):
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+        # Reset the update flags
+        self.lidar_updated.clear()
+        self.odom_updated.clear()
+        self.clock_updated.clear()
+
         # Send action to robot
         twist = Twist()
         twist.linear.x = float(action[0])  # Linear velocity
         twist.angular.z = float(action[1])  # Angular velocity
         self.cmd_vel_publisher.publish(twist)
 
-        print(f"[DEBUG] Action: {action}")
-
         # Unpause the simulation to propagate the state
-        self.unpause_simulation()
-
-        print(f"[DEBUG] Unpaused simulation")
+        if self.unpause_client.wait_for_service(timeout_sec=1.0):
+            future = self.unpause_client.call_async(Empty.Request())
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+            if not future.done():
+                self.node.get_logger().error('Failed to unpause simulation')
+                return {}, 0.0, True, False, {}
 
         # propagate state for TIME_DELTA seconds
         for _ in range(int(TIME_DELTA)):
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
         # Pause the simulation after propagating state
-        self.pause_simulation()
+        if self.pause_client.wait_for_service(timeout_sec=1.0):
+            future = self.pause_client.call_async(Empty.Request())
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+            if not future.done():
+                self.node.get_logger().error('Failed to pause simulation')
+                return {}, 0.0, True, False, {}
 
-        print(f"[DEBUG] Paused simulation")
-
-        self.update_event.wait()
-        self.update_event.clear()
 
         # Check the status of the robot
         done = self.get_status()
 
+        print(f"[DEBUG] goal distance: {self.goal_distance}")
+
         self.goal_distance = np.sqrt((self.robot_state[0] - self.goal_x) ** 2 + (self.robot_state[1] - self.goal_y) ** 2)
-        reward = rw.get_reward(self.cummulative_reward, self.robot_status, self.obstacle_distance, self.heading, twist.linear.x, self.goal_distance)
+
+        print(f"[DEBUG] new goal distance: {self.goal_distance} and previous reward: {self.cummulative_reward}")
+
+        reward = rw.get_reward(self.cummulative_reward, self.robot_status, self.obstacle_distance, self.heading, twist.linear.x, self.goal_distance, self.reset_flag)
         self.cummulative_reward = reward
 
-        state = {'lidar': self.lidar_data.copy(), 'position': self.robot_state.copy(), 'robot_tilt': self.robot_tilt.copy()}
+        self.reset_flag = False
+
+        state = {'position': self.robot_state.copy()}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
@@ -221,7 +227,20 @@ class NovamobGym(gym.Env):
         self.episode_deadline = self.current_time + MAX_EPISODE_TIME
 
         # Reset the gazebo simulation
-        self.reset_simulation()
+        if self.reset_client.wait_for_service(timeout_sec=1.0):
+            reset_req = Empty.Request()
+            future = self.reset_client.call_async(reset_req)
+            rclpy.spin_until_future_complete(self.node, future)
+            if future.result() is not None:
+                self.node.get_logger().info('Simulation reset completed')
+            else:
+                self.node.get_logger().error('Failed to reset simulation')
+        else:
+            self.node.get_logger().error('Reset service not available')
+
+        # Wait until data from all topics has been read at least once
+        while not (self.lidar_updated.is_set() and self.odom_updated.is_set() and self.clock_updated.is_set()):
+            rclpy.spin_once(self.node, timeout_sec=0.1)
 
         # Reset the update flags
         self.lidar_updated.clear()
@@ -230,14 +249,15 @@ class NovamobGym(gym.Env):
 
         self.current_time = 0
         self.goal_index = 0
-        self.change_goal()
+        # self.change_goal()
         rw.reward_init(self.goal_distance)
-        # self.cummulative_reward = 0.0
+
+        self.reset_flag = True
 
         self.robot_status = UNKNOWN
         self.goal_distance = np.sqrt((self.robot_state[0] - self.goal_x) ** 2 + (self.robot_state[1] - self.goal_y) ** 2)
 
-        state = {'lidar': self.lidar_data.copy(), 'position': self.robot_state.copy(), 'robot_tilt': self.robot_tilt.copy()}
+        state = {'position': self.robot_state.copy()}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
@@ -249,9 +269,9 @@ class NovamobGym(gym.Env):
         self.robot_status = UNKNOWN
 
         if self.goal_distance < GOAL_THRESHOLD:
-            if self.goal_index != 3:
-                self.change_goal()
-            else:
+            # if self.goal_index != 3:
+            #     self.change_goal()
+            # else:
                 self.robot_status = GOAL_REACHED
         elif self.obstacle_distance < COLLISION_DISTANCE:
             self.robot_status = COLLISION
@@ -266,14 +286,14 @@ class NovamobGym(gym.Env):
         return False
 
 
-    def change_goal(self):
-        if self.goal_index == len(self.goal_array):
-            self.goal_index = 0
-        self.goal_x = self.goal_array[self.goal_index][0]
-        self.goal_y = self.goal_array[self.goal_index][1]
-        self.goal_index += 1
+    # def change_goal(self):
+    #     if self.goal_index == len(self.goal_array):
+    #         self.goal_index = 0
+    #     self.goal_x = self.goal_array[self.goal_index][0]
+    #     self.goal_y = self.goal_array[self.goal_index][1]
+    #     self.goal_index += 1
 
-        print(f"[DEBUG] New goal: ({self.goal_x}, {self.goal_y})")
+    #     print(f"[DEBUG] New goal: ({self.goal_x}, {self.goal_y})")
 
 
     def __del__(self):
@@ -284,32 +304,3 @@ class NovamobGym(gym.Env):
         if self.executor_thread.is_alive():
             self.executor.shutdown()
             self.executor_thread.join()
-
-
-    def unpause_simulation(self):
-        if self.unpause_client.wait_for_service(timeout_sec=1.0):
-            future = self.unpause_client.call_async(Empty.Request())
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
-            if not future.done():
-                self.node.get_logger().error('Failed to unpause simulation')
-
-
-    def pause_simulation(self):
-        if self.pause_client.wait_for_service(timeout_sec=1.0):
-            future = self.pause_client.call_async(Empty.Request())
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
-            if not future.done():
-                self.node.get_logger().error('Failed to pause simulation')
-
-
-    def reset_simulation(self):
-        if self.reset_client.wait_for_service(timeout_sec=1.0):
-            reset_req = Empty.Request()
-            future = self.reset_client.call_async(reset_req)
-            rclpy.spin_until_future_complete(self.node, future)
-            if future.result() is not None:
-                self.node.get_logger().info('Simulation reset completed')
-            else:
-                self.node.get_logger().error('Failed to reset simulation')
-        else:
-            self.node.get_logger().error('Reset service not available')
