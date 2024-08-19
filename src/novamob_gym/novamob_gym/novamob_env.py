@@ -43,7 +43,9 @@ class NovamobGym(gym.Env):
         self.action_space = spaces.Box(low=np.array([-1.0, -1.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
         
         # the observation space is a continuous space with 1080 values from the lidar sensor, a continuous position space with 2 values (x, y), and a continuous robot tilt space with 2 values (roll, pitch)
-        self.observation_space = spaces.Dict({'position': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32),
+        self.observation_space = spaces.Dict({'lidar': spaces.Box(low=0.0, high=10.0, shape=(6,), dtype=np.float32),
+                                              'position': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32),
+                                              'robot_tilt': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
                                               })
 
         # Clients
@@ -135,13 +137,16 @@ class NovamobGym(gym.Env):
 
 
     def process_lidar_readings(self, readings):
+
+        left_readings = np.concatenate([readings[:10]], readings[-10:])
+
         features = {
             'min_distance': float(np.min(readings)),
             'max_distance': float(np.max(readings)),
             'average_distance': float(np.mean(readings)),
-            'front_distance': float(np.min(readings[len(readings)//2 - 5:len(readings)//2 + 5])),  # Distance directly in front
-            'left_distance': float(np.min(readings[:10])),  # Distance to the left
-            'right_distance': float(np.min(readings[-10:]))  # Distance to the right
+            'front_distance': float(np.min(readings[len(readings)*0.75 - 10:len(readings)*0.75 + 10])),  # Distance directly in front
+            'left_distance': float(np.min(left_readings)),  # Distance to the left
+            'right_distance': float(np.min(readings[len(readings)*0.5-10:len(readings)*0.5+10]))  # Distance to the right
         }
         return features
 
@@ -193,7 +198,7 @@ class NovamobGym(gym.Env):
 
         self.reset_flag = False
 
-        state = {'position': self.robot_state.copy()}
+        state = {'lidar': self.lidar_data.copy(), 'position': self.robot_state.copy(), 'robot_tilt': self.robot_tilt.copy()}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
@@ -238,7 +243,7 @@ class NovamobGym(gym.Env):
         self.robot_status = UNKNOWN
         self.goal_distance = np.sqrt((self.robot_state[0] - self.goal_x) ** 2 + (self.robot_state[1] - self.goal_y) ** 2)
 
-        state = {'position': self.robot_state.copy()}
+        state = {'lidar': self.lidar_data.copy(), 'position': self.robot_state.copy(), 'robot_tilt': self.robot_tilt.copy()}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}

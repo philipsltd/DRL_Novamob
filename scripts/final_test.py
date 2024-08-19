@@ -29,7 +29,7 @@ def evaluate_model(env, model, num_episodes=10):
 if __name__ == '__main__':
     rclpy.init(args=None)  # Initialize ROS 2 if needed
     # Load the trained model
-    model = PPO.load("/home/filipe/thesis/drl_novamob_alt/src/novamob_gym/novamob_gym/ppo_novamob_model.zip")
+    model = PPO.load("/home/filipe/thesis/drl_novamob/src/novamob_gym/novamob_gym/ppo_novamob_model3.zip")
 
     # Create the environment
     env = gym.make('NovamobGym-v0')

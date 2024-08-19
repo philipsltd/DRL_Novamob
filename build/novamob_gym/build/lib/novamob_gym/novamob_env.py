@@ -43,7 +43,9 @@ class NovamobGym(gym.Env):
         self.action_space = spaces.Box(low=np.array([-1.0, -1.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
         
         # the observation space is a continuous space with 1080 values from the lidar sensor, a continuous position space with 2 values (x, y), and a continuous robot tilt space with 2 values (roll, pitch)
-        self.observation_space = spaces.Dict({'position': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32),
+        self.observation_space = spaces.Dict({'lidar': spaces.Box(low=0.0, high=10.0, shape=(6,), dtype=np.float32),
+                                              'position': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32),
+                                              'robot_tilt': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
                                               })
 
         # Clients
@@ -169,24 +171,14 @@ class NovamobGym(gym.Env):
         self.cmd_vel_publisher.publish(twist)
 
         # Unpause the simulation to propagate the state
-        if self.unpause_client.wait_for_service(timeout_sec=1.0):
-            future = self.unpause_client.call_async(Empty.Request())
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
-            if not future.done():
-                self.node.get_logger().error('Failed to unpause simulation')
-                return {}, 0.0, True, False, {}
+        self.unpause_simulation()
 
         # propagate state for TIME_DELTA seconds
         for _ in range(int(TIME_DELTA)):
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
         # Pause the simulation after propagating state
-        if self.pause_client.wait_for_service(timeout_sec=1.0):
-            future = self.pause_client.call_async(Empty.Request())
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
-            if not future.done():
-                self.node.get_logger().error('Failed to pause simulation')
-                return {}, 0.0, True, False, {}
+        self.pause_simulation()
 
 
         # Check the status of the robot
@@ -203,7 +195,7 @@ class NovamobGym(gym.Env):
 
         self.reset_flag = False
 
-        state = {'position': self.robot_state.copy()}
+        state = {'lidar': self.lidar_data.copy(), 'position': self.robot_state.copy(), 'robot_tilt': self.robot_tilt.copy()}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
@@ -227,16 +219,7 @@ class NovamobGym(gym.Env):
         self.episode_deadline = self.current_time + MAX_EPISODE_TIME
 
         # Reset the gazebo simulation
-        if self.reset_client.wait_for_service(timeout_sec=1.0):
-            reset_req = Empty.Request()
-            future = self.reset_client.call_async(reset_req)
-            rclpy.spin_until_future_complete(self.node, future)
-            if future.result() is not None:
-                self.node.get_logger().info('Simulation reset completed')
-            else:
-                self.node.get_logger().error('Failed to reset simulation')
-        else:
-            self.node.get_logger().error('Reset service not available')
+        self.reset_simulation()
 
         # Wait until data from all topics has been read at least once
         while not (self.lidar_updated.is_set() and self.odom_updated.is_set() and self.clock_updated.is_set()):
@@ -257,7 +240,7 @@ class NovamobGym(gym.Env):
         self.robot_status = UNKNOWN
         self.goal_distance = np.sqrt((self.robot_state[0] - self.goal_x) ** 2 + (self.robot_state[1] - self.goal_y) ** 2)
 
-        state = {'position': self.robot_state.copy()}
+        state = {'lidar': self.lidar_data.copy(), 'position': self.robot_state.copy(), 'robot_tilt': self.robot_tilt.copy()}
 
         # Ensure the state is within the observation space and has the correct dtype
         state = {k: np.asarray(v, dtype=self.observation_space[k].dtype) for k, v in state.items()}
@@ -304,3 +287,32 @@ class NovamobGym(gym.Env):
         if self.executor_thread.is_alive():
             self.executor.shutdown()
             self.executor_thread.join()
+
+
+    def unpause_simulation(self):
+        if self.unpause_client.wait_for_service(timeout_sec=1.0):
+            future = self.unpause_client.call_async(Empty.Request())
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+            if not future.done():
+                self.node.get_logger().error('Failed to unpause simulation')
+
+
+    def pause_simulation(self):
+        if self.pause_client.wait_for_service(timeout_sec=1.0):
+            future = self.pause_client.call_async(Empty.Request())
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+            if not future.done():
+                self.node.get_logger().error('Failed to pause simulation')
+
+
+    def reset_simulation(self):
+        if self.reset_client.wait_for_service(timeout_sec=1.0):
+            reset_req = Empty.Request()
+            future = self.reset_client.call_async(reset_req)
+            rclpy.spin_until_future_complete(self.node, future)
+            if future.result() is not None:
+                self.node.get_logger().info('Simulation reset completed')
+            else:
+                self.node.get_logger().error('Failed to reset simulation')
+        else:
+            self.node.get_logger().error('Reset service not available')
