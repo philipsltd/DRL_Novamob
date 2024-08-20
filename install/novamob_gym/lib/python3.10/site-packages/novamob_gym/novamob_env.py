@@ -77,7 +77,9 @@ class NovamobGym(gym.Env):
         self.current_time = 0
         self.episode_deadline = np.inf
         self.robot_status = UNKNOWN
-        self.cummulative_reward = 0.0
+
+        self.cummulative_global_reward = 0.0
+        self.cummulative_ep_reward = 0.0
 
         self.reset_flag = False
 
@@ -187,14 +189,10 @@ class NovamobGym(gym.Env):
         # Check the status of the robot
         done = self.get_status()
 
-        print(f"[DEBUG] goal distance: {self.goal_distance}")
-
         self.goal_distance = np.sqrt((self.robot_state[0] - self.goal_x) ** 2 + (self.robot_state[1] - self.goal_y) ** 2)
 
-        print(f"[DEBUG] new goal distance: {self.goal_distance} and previous reward: {self.cummulative_reward}")
-
-        reward = rw.get_reward(self.cummulative_reward, self.robot_status, self.obstacle_distance, self.heading, twist.linear.x, self.goal_distance, self.reset_flag)
-        self.cummulative_reward = reward
+        reward = rw.get_reward(self.cummulative_ep_reward, self.robot_status, self.obstacle_distance, self.heading, twist.linear.x, self.goal_distance, self.reset_flag)
+        self.cummulative_ep_reward = reward
 
         self.reset_flag = False
 
@@ -207,9 +205,12 @@ class NovamobGym(gym.Env):
         terminated = done
         truncated = False
 
-        print(f"[DEBUG] cummulative: {self.cummulative_reward}")
+        self.cummulative_global_reward += self.cummulative_ep_reward
 
-        return state, reward, terminated, truncated, {}
+        print(f"[DEBUG] reward global: {self.cummulative_global_reward}")
+        print(f"[DEBUG] cummulative: {self.cummulative_ep_reward}")
+
+        return state, self.cummulative_global_reward, terminated, truncated, {}
 
 
     def reset(self, seed=None, options=None):
@@ -237,6 +238,7 @@ class NovamobGym(gym.Env):
         self.goal_index = 0
         # self.change_goal()
         rw.reward_init(self.goal_distance)
+        self.cummulative_ep_reward = 0.0
 
         self.reset_flag = True
 
@@ -255,7 +257,7 @@ class NovamobGym(gym.Env):
         self.robot_status = UNKNOWN
 
         if self.goal_distance < GOAL_THRESHOLD:
-            # if self.goal_index != 3:
+            # if self.goal_index != len(self.goal_array) - 1:
             #     self.change_goal()
             # else:
                 self.robot_status = GOAL_REACHED

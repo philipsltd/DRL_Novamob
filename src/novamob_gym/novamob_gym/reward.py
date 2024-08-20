@@ -13,7 +13,7 @@ initial_goal_distance = 0.0
 
 
 # Step 1: Define your functions
-def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal):
+def get_reward_1(cummulative_ep_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal):
     global initial_goal_distance
 
     # marker_1 = 0.1 * TRACK_WIDTH
@@ -29,68 +29,68 @@ def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_an
 
     # Distance to goal reward
     if distance_to_goal < initial_goal_distance:
-        cummulative_reward += 2.0
+        cummulative_ep_reward += 2.0
     elif distance_to_goal >= initial_goal_distance:
-        cummulative_reward -= 1.0
+        cummulative_ep_reward -= 1.0
 
     # Reward based on how close the robot is to the ideal distance
     distance_error = abs(obstacle_distance - ideal_distance)
     distance_reward = max(0, 5.0 - (distance_error / ideal_distance) * 5.0)  # Reward decreases as error increases
-    cummulative_reward += distance_reward
+    cummulative_ep_reward += distance_reward
 
     if heading_angle >= -5 and heading_angle <= 5:
         if linear_speed > 0.8:
-            cummulative_reward += 1.0
+            cummulative_ep_reward += 1.0
         elif linear_speed > 0.5:
-            cummulative_reward += 0.5
+            cummulative_ep_reward += 0.5
     elif abs(heading_angle) > 20:
         if linear_speed < 0.8:
-            cummulative_reward += 0.5
+            cummulative_ep_reward += 0.5
         elif linear_speed < 0.6:
-            cummulative_reward += 1.0
+            cummulative_ep_reward += 1.0
 
     if linear_speed < 0.0:
-        cummulative_reward -= 5.0
+        cummulative_ep_reward -= 5.0
 
     if robot_status == GOAL_REACHED:
-        cummulative_reward += 100.0
+        cummulative_ep_reward += 100.0
     elif robot_status == TIMEOUT:
-        cummulative_reward -= 20.0
+        cummulative_ep_reward -= 20.0
     elif robot_status == COLLISION or robot_status == ROLLED_OVER:
-        cummulative_reward -= 15.0
+        cummulative_ep_reward -= 15.0
 
     # Baseline reward for each step
-    cummulative_reward += 0.1
+    cummulative_ep_reward += 0.1
     initial_goal_distance = distance_to_goal
 
-    return float(cummulative_reward)
+    return float(cummulative_ep_reward)
 
 
-def get_reward_2(cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag):
+def get_reward_2(cummulative_ep_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag):
 
     global initial_goal_distance
     ideal_distance = 0.45 * TRACK_WIDTH
 
-    print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
-    print(f"[DEBUG] distance to goal: {distance_to_goal}")
-    print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
+    # print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
+    # print(f"[DEBUG] distance to goal: {distance_to_goal}")
+    # print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
 
     if reset_flag:
         initial_goal_distance = distance_to_goal
-        return float(cummulative_reward)
+        return float(cummulative_ep_reward)
     
-    cummulative_reward += (initial_goal_distance - distance_to_goal)
+    cummulative_ep_reward += (initial_goal_distance - distance_to_goal)
     initial_goal_distance = distance_to_goal
 
     # Reward based on how close the robot is to the ideal distance
     distance_error = abs(obstacle_distance - ideal_distance)
     distance_reward = max(0, 5.0 - (distance_error / ideal_distance) * 5.0)  # Reward decreases as error increases
-    cummulative_reward += distance_reward
+    cummulative_ep_reward += distance_reward
 
     if robot_status == GOAL_REACHED:
-        cummulative_reward += 100.0
+        cummulative_ep_reward += 100.0
 
-    return float(cummulative_reward)
+    return float(cummulative_ep_reward)
 
 
 def get_reward_3(robot_status):
@@ -106,14 +106,14 @@ function_dict = {
 }
 
 # Step 3: Implement the function selector based on the constant from the settings file
-def get_reward(cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag):
+def get_reward(cummulative_ep_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag):
     # Get the choice from the settings file
     function_to_use = REWARD_FUNCTION
     
     # Check if the choice exists in the dictionary
     if function_to_use in function_dict:
         # Call the selected function
-        reward = function_dict[function_to_use](cummulative_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag)
+        reward = function_dict[function_to_use](cummulative_ep_reward, robot_status, obstacle_distance, heading_angle, linear_speed, distance_to_goal, reset_flag)
         return reward
     else:
         raise ValueError("Invalid choice in settings! Please select a valid function name.")
