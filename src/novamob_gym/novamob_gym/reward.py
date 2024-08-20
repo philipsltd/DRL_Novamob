@@ -23,9 +23,9 @@ def get_reward_1(cummulative_reward, robot_status, obstacle_distance, heading_an
     # Define the ideal distance to the walls (half the track width)
     ideal_distance = 0.45 * TRACK_WIDTH
 
-    print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
-    print(f"[DEBUG] distance to goal: {distance_to_goal}")
-    print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
+    # print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
+    # print(f"[DEBUG] distance to goal: {distance_to_goal}")
+    # print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
 
     # Distance to goal reward
     if distance_to_goal < initial_goal_distance:
@@ -71,9 +71,9 @@ def get_reward_2(cummulative_reward, robot_status, obstacle_distance, heading_an
     global initial_goal_distance
     ideal_distance = 0.45 * TRACK_WIDTH
 
-    print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
-    print(f"[DEBUG] distance to goal: {distance_to_goal}")
-    print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
+    # print(f"[DEBUG] initial goal distance: {initial_goal_distance}")
+    # print(f"[DEBUG] distance to goal: {distance_to_goal}")
+    # print(f"[DEBUG] difference: {initial_goal_distance- distance_to_goal}")
 
     if reset_flag:
         initial_goal_distance = distance_to_goal

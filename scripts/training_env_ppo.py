@@ -15,6 +15,7 @@ def train_environment():
     model = PPO('MultiInputPolicy', env, verbose=1, tensorboard_log="./ppo_novamob_tensorboard/", device='cpu')
     
     # Train the agent
+    print("Training the agent for 10000 timesteps...")
     model.learn(total_timesteps=10000)  # Adjust the number of timesteps as needed
     
     # Save the trained model
