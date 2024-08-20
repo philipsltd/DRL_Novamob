@@ -23,13 +23,13 @@ def evaluate_model(env, model, num_episodes=10):
             action, _states = model.predict(obs, deterministic=True)
             obs, rewards, done, info = env.step(action)
             total_reward += rewards
-            print(f"Step: {obs}, Action: {action}, Reward: {rewards}")
+            print(f"Step: {obs}, Action: {action}, Reward: {rewards}, Done: {done}")
         print(f"Episode {episode + 1}: Total Reward: {total_reward}")
 
 if __name__ == '__main__':
     rclpy.init(args=None)  # Initialize ROS 2 if needed
     # Load the trained model
-    model = PPO.load("/home/filipe/thesis/drl_novamob/src/novamob_gym/novamob_gym/ppo_novamob_model3.zip")
+    model = PPO.load("/home/filipe/thesis/drl_novamob/src/novamob_gym/novamob_gym/ppo_novamob_model4.zip")
 
     # Create the environment
     env = gym.make('NovamobGym-v0')

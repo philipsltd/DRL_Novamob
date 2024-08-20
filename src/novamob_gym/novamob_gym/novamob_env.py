@@ -137,16 +137,16 @@ class NovamobGym(gym.Env):
 
 
     def process_lidar_readings(self, readings):
-
-        left_readings = np.concatenate([readings[:10]], readings[-10:])
+        # Concatenate the first 10 and last 10 readings into one array
+        left_readings = np.concatenate([readings[:10], readings[-10:]])
 
         features = {
             'min_distance': float(np.min(readings)),
             'max_distance': float(np.max(readings)),
             'average_distance': float(np.mean(readings)),
-            'front_distance': float(np.min(readings[len(readings)*0.75 - 10:len(readings)*0.75 + 10])),  # Distance directly in front
-            'left_distance': float(np.min(left_readings)),  # Distance to the left
-            'right_distance': float(np.min(readings[len(readings)*0.5-10:len(readings)*0.5+10]))  # Distance to the right
+            'front_distance': float(np.min(readings[len(readings)//2 - 5:len(readings)//2 + 5])),  # Distance directly in front
+            'left_distance': float(np.min(left_readings)),  # Minimum distance from the combined first and last 10 readings
+            'right_distance': float(np.min(readings[-10:]))  # Distance to the right
         }
         return features
 
@@ -255,7 +255,7 @@ class NovamobGym(gym.Env):
         self.robot_status = UNKNOWN
 
         if self.goal_distance < GOAL_THRESHOLD:
-            # if self.goal_index != 3:
+            # if self.goal_index != len(self.goal_array) - 1:
             #     self.change_goal()
             # else:
                 self.robot_status = GOAL_REACHED
